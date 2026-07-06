@@ -1,16 +1,15 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   dotfiles = "${config.home.homeDirectory}/.dotfiles";
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
 in
 
 {
   home.username = "yashjeetbajwa";
-  home.homeDirectory = "/home/yashjeetbajwa";
+  home.homeDirectory = if isDarwin then "/Users/yashjeetbajwa" else "/home/yashjeetbajwa";
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
-    home-manager
-    herdr
     # cli i use constantly
     ripgrep   # fast search
     fd        # fast find
@@ -20,6 +19,9 @@ in
     neovim
     # the font everything renders in
     nerd-fonts.hack
+  ] ++ lib.optionals (!isDarwin) [
+    home-manager  # mac uses darwin-rebuild, not the home-manager CLI
+    herdr         # mac installs herdr via Homebrew (see configuration.nix)
   ];
   fonts.fontconfig.enable = true;
   home.sessionVariables.EDITOR = "nvim";

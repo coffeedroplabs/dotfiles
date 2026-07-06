@@ -1,63 +1,99 @@
 #!/usr/bin/env bash
-# Fresh-machine bootstrap for WSL Ubuntu.
-# Installs prerequisites, Determinate Nix, symlinks this repo to ~/.dotfiles,
-# runs the first home-manager switch, sets zsh as login shell, writes /etc/wsl.conf,
-# and installs the Windows-side WezTerm loader + Hack Nerd Font.
+# Fresh-machine bootstrap for WSL Ubuntu (Linux) or macOS.
+# Installs Determinate Nix, symlinks this repo to ~/.dotfiles, and runs the
+# first switch. On Linux also sets up apt prerequisites, zsh login shell,
+# /etc/wsl.conf, and the Windows-side WezTerm loader.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-WSL_DISTRO="${WSL_DISTRO:-Ubuntu}"
-WIN_USER="${WIN_USER:-$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r')}"
+OS="$(uname -s)"
 
 step() { printf "\n\033[1;34m==>\033[0m %s\n" "$*"; }
 
-step "1/6  apt prerequisites"
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl build-essential zsh
+case "$OS" in
+  Darwin)
+    step "1/2  Determinate Nix"
+    if command -v nix >/dev/null 2>&1; then
+      echo "    nix already installed, skipping"
+    else
+      curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+        | sh -s -- install --no-confirm
+      # shellcheck disable=SC1091
+      . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    fi
 
-step "2/6  Determinate Nix"
-if ! command -v nix >/dev/null 2>&1; then
-  sh <(curl -L https://determinate.systems/install) --no-confirm
-  # shellcheck disable=SC1090
-  . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-else
-  echo "nix already installed, skipping"
-fi
+    step "2/2  first darwin-rebuild switch (pinned to nix-darwin-26.05)"
+    # darwin-rebuild doesn't exist yet on a fresh machine, so run it straight
+    # from the flake this once. After this, rebuild.sh works normally.
+    # sudo resets PATH to a secure default that excludes /nix/.../bin, so a
+    # freshly installed `nix` would not be found under sudo even though it's
+    # on PATH here. Resolve the absolute path first and invoke that instead.
+    NIX_BIN="$(command -v nix)"
+    sudo "$NIX_BIN" run github:nix-darwin/nix-darwin/nix-darwin-26.05#darwin-rebuild -- \
+      switch --flake ~/.dotfiles#mac
 
-step "3/6  symlink repo to ~/.dotfiles"
-ln -sfn "$DIR" ~/.dotfiles
+    echo
+    echo "Done. Use ./rebuild.sh for future changes."
+    ;;
 
-step "4/6  first home-manager switch"
-home-manager switch --flake ~/.dotfiles#yashjeetbajwa
+  Linux)
+    WSL_DISTRO="${WSL_DISTRO:-Ubuntu}"
+    WIN_USER="${WIN_USER:-$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r')}"
 
-step "5/6  zsh as login shell"
-if [ "$(getent passwd "$(whoami)" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
-  chsh -s /usr/bin/zsh
-fi
+    step "1/6  apt prerequisites"
+    sudo apt-get update
+    sudo apt-get install -y ca-certificates curl build-essential zsh
 
-step "6/6  system + Windows-side config"
-# /etc/wsl.conf
-if ! sudo diff -q "$DIR/wsl.conf" /etc/wsl.conf >/dev/null 2>&1; then
-  sudo cp "$DIR/wsl.conf" /etc/wsl.conf
-  echo "wsl.conf updated. Run 'wsl --shutdown' from Windows to apply, then reopen."
-else
-  echo "wsl.conf already in sync"
-fi
+    step "2/6  Determinate Nix"
+    if ! command -v nix >/dev/null 2>&1; then
+      sh <(curl -L https://determinate.systems/install) --no-confirm
+      # shellcheck disable=SC1090
+      . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    else
+      echo "nix already installed, skipping"
+    fi
 
-# Windows-side WezTerm loader.
-# The \\wsl$\ share does not follow symlinks, so the loader must point at the
-# real file inside this repo (not ~/.config/wezterm, which is a home-manager
-# symlink into /nix/store). Using $DIR keeps it clone-location-agnostic.
-if [ -n "$WIN_USER" ]; then
-  WIN_WEZTERM="/mnt/c/Users/$WIN_USER/.wezterm.lua"
-  LINUX_PATH="$DIR/home/.config/wezterm/wezterm.lua"
-  BACKSLASH_PATH=$(printf '%s' "$LINUX_PATH" | tr '/' '\\')
-  printf 'return dofile(\n  [[\\\\wsl$\\%s%s]]\n)\n' "$WSL_DISTRO" "$BACKSLASH_PATH" > "$WIN_WEZTERM"
-  echo "Windows WezTerm loader written to $WIN_WEZTERM"
-  echo "Install Hack Nerd Font on Windows: see README.md"
-else
-  echo "Could not detect Windows username; skip .wezterm.lua manually (see README.md)"
-fi
+    step "3/6  symlink repo to ~/.dotfiles"
+    ln -sfn "$DIR" ~/.dotfiles
 
-echo
-echo "Done. Reopen your terminal (or 'wsl --shutdown' from Windows) to start zsh."
+    step "4/6  first home-manager switch"
+    home-manager switch --flake ~/.dotfiles#yashjeetbajwa
+
+    step "5/6  zsh as login shell"
+    if [ "$(getent passwd "$(whoami)" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
+      chsh -s /usr/bin/zsh
+    fi
+
+    step "6/6  system + Windows-side config"
+    # /etc/wsl.conf
+    if ! sudo diff -q "$DIR/wsl.conf" /etc/wsl.conf >/dev/null 2>&1; then
+      sudo cp "$DIR/wsl.conf" /etc/wsl.conf
+      echo "wsl.conf updated. Run 'wsl --shutdown' from Windows to apply, then reopen."
+    else
+      echo "wsl.conf already in sync"
+    fi
+
+    # Windows-side WezTerm loader.
+    # The \\wsl$\ share does not follow symlinks, so the loader must point at the
+    # real file inside this repo (not ~/.config/wezterm, which is a home-manager
+    # symlink into /nix/store). Using $DIR keeps it clone-location-agnostic.
+    if [ -n "$WIN_USER" ]; then
+      WIN_WEZTERM="/mnt/c/Users/$WIN_USER/.wezterm.lua"
+      LINUX_PATH="$DIR/home/.config/wezterm/wezterm.lua"
+      BACKSLASH_PATH=$(printf '%s' "$LINUX_PATH" | tr '/' '\\')
+      printf 'return dofile(\n  [[\\\\wsl$\\%s%s]]\n)\n' "$WSL_DISTRO" "$BACKSLASH_PATH" > "$WIN_WEZTERM"
+      echo "Windows WezTerm loader written to $WIN_WEZTERM"
+      echo "Install Hack Nerd Font on Windows: see README.md"
+    else
+      echo "Could not detect Windows username; skip .wezterm.lua manually (see README.md)"
+    fi
+
+    echo
+    echo "Done. Reopen your terminal (or 'wsl --shutdown' from Windows) to start zsh."
+    ;;
+
+  *)
+    echo "Unsupported OS: $OS" >&2
+    exit 1
+    ;;
+esac
