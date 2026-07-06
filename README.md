@@ -57,7 +57,7 @@ $dir = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"
 Invoke-WebRequest "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip" -OutFile $zip
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Expand-Archive $zip -DestinationPath $dir -Force
-Get-ChildItem "$dir\*.ttf" | ForEach-Object { Add-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name "$($_.BaseName) (TrueType)" -Value $_.FullName }
+Get-ChildItem "$dir\HackNerdFont*.ttf" | ForEach-Object { New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name "$($_.BaseName) (TrueType)" -Value $_.FullName -PropertyType String -Force | Out-Null }
 ```
 
 ### Validate without applying
