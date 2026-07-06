@@ -1,0 +1,12 @@
+# herdr runtime artifacts
+home/.config/herdr/*.log
+home/.config/herdr/session.json
+
+# nix
+result
+
+# editor junk
+*.swp
+*.swo
+*~
+.DS_Store

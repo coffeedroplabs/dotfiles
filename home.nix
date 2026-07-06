@@ -1,7 +1,7 @@
 { config, pkgs, ... }:
 
 let
-  dotfiles = "${config.home.homeDirectory}/projects/dotfiles";
+  dotfiles = "${config.home.homeDirectory}/.dotfiles";
 in
 
 {
@@ -10,6 +10,7 @@ in
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
     home-manager
+    herdr
     # cli i use constantly
     ripgrep   # fast search
     fd        # fast find
