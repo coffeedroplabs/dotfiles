@@ -20,6 +20,7 @@ Running the switch builds:
 - WSL2 with Ubuntu 24.04 (Noble) or similar.
 - Windows-side WezTerm installed.
 - Sudo access inside WSL.
+- Agent CLIs (optional, for the `cc`/`co` aliases): `claude` and `codex` are not managed by this repo. Install them separately, e.g. `npm i -g @anthropic-ai/claude-code @openai/codex`. The repo only manages their config files.
 
 ## Fresh-machine setup
 

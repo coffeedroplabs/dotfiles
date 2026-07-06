@@ -1,3 +1,18 @@
+-- WSL clipboard provider: use Windows clip.exe (copy) + powershell (paste).
+-- No package needed; works on any WSL install. cache_enabled = 0 because the
+-- Windows clipboard can change outside nvim, so stale cache would paste wrong text.
+if vim.fn.has('wsl') == 1 then
+  vim.g.clipboard = {
+    name = 'wsl-clipboard',
+    copy = { ['+'] = 'clip.exe', ['*'] = 'clip.exe' },
+    paste = {
+      ['+'] = 'powershell.exe -NoProfile -Command Get-Clipboard',
+      ['*'] = 'powershell.exe -NoProfile -Command Get-Clipboard',
+    },
+    cache_enabled = 0,
+  }
+end
+
 local o = vim.opt
 vim.g.mapleader = ' '          -- space is the leader key
 o.expandtab = true             -- spaces, not tabs
