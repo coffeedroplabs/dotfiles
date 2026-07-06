@@ -19,6 +19,9 @@ in
     neovim
     # the font everything renders in
     nerd-fonts.hack
+    # node / pnpm for resumae webapp (vite 8, react 19, pnpm lockfile v9)
+    nodejs
+    pnpm
   ] ++ lib.optionals (!isDarwin) [
     home-manager  # mac uses darwin-rebuild, not the home-manager CLI
     herdr         # mac installs herdr via Homebrew (see configuration.nix)
