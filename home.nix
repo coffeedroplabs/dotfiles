@@ -9,6 +9,7 @@ in
   home.homeDirectory = "/home/yashjeetbajwa";
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
+    home-manager
     # cli i use constantly
     ripgrep   # fast search
     fd        # fast find
@@ -44,11 +45,15 @@ in
     enable = true;
 
     settings = {
-      user = {
-        name = "yashjeetbajwadev";
-        email = "12064392+yashjeetbajwadev@users.noreply.github.com";
-      };
+      user.name = "yashjeetbajwadev";
+      user.email = "12064392+yashjeetbajwadev@users.noreply.github.com";
     };
+  };
+
+  programs.gh = {
+    enable = true;
+
+    gitCredentialHelper.enable = true;
   };
 
   programs.starship = {
