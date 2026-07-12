@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, user, ... }:
 
 let
   dotfiles = "${config.home.homeDirectory}/.dotfiles";
@@ -6,8 +6,8 @@ let
 in
 
 {
-  home.username = "yashjeetbajwa";
-  home.homeDirectory = if isDarwin then "/Users/yashjeetbajwa" else "/home/yashjeetbajwa";
+  home.username = user;
+  home.homeDirectory = if isDarwin then "/Users/${user}" else "/home/${user}";
   home.stateVersion = "24.11";
   home.packages = with pkgs; [
     # cli i use constantly
@@ -19,9 +19,6 @@ in
     neovim
     # the font everything renders in
     nerd-fonts.hack
-    # node / pnpm for resumae webapp (vite 8, react 19, pnpm lockfile v9)
-    nodejs
-    pnpm
   ] ++ lib.optionals (!isDarwin) [
     home-manager  # mac uses darwin-rebuild, not the home-manager CLI
     herdr         # mac installs herdr via Homebrew (see configuration.nix)
@@ -44,15 +41,6 @@ in
       m = "git switch main";
       cc = "claude --dangerously-skip-permissions";
       co = "codex --full-auto";
-    };
-  };
-
-  programs.git = {
-    enable = true;
-
-    settings = {
-      user.name = "yashjeetbajwadev";
-      user.email = "12064392+yashjeetbajwadev@users.noreply.github.com";
     };
   };
 

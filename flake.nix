@@ -19,8 +19,12 @@
     herdr.url = "github:ogulcancelik/herdr";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-darwin, nix-darwin, nix-homebrew, home-manager, herdr, ... }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-darwin, nix-darwin, nix-homebrew, home-manager, herdr, ... }:
   let
+    # The one username line to change if this isn't your machine.
+    # bootstrap.sh offers to rewrite this for you if your macOS username differs.
+    user = "yashjeetbajwa";
+
     # --- Linux (WSL Ubuntu): standalone home-manager ---
     linuxSystem = "x86_64-linux";
     linuxPkgs = import nixpkgs {
@@ -29,9 +33,10 @@
       overlays = [ herdr.overlays.default ];
     };
   in {
-    homeConfigurations.yashjeetbajwa =
+    homeConfigurations.${user} =
       home-manager.lib.homeManagerConfiguration {
         pkgs = linuxPkgs;
+        specialArgs = { inherit user; };
         modules = [ ./home.nix ];
       };
 
@@ -39,6 +44,7 @@
     darwinConfigurations."mac" =
       nix-darwin.lib.darwinSystem {
         system = "aarch64-darwin";
+        specialArgs = { inherit user; };
         modules = [
           ./configuration.nix
           nix-homebrew.darwinModules.nix-homebrew
@@ -46,7 +52,8 @@
           {
             home-manager.useGlobalPkgs = true;
             home-manager.useUserPackages = true;
-            home-manager.users.yashjeetbajwa = import ./home.nix;
+            home-manager.extraSpecialArgs = { inherit user; };
+            home-manager.users.${user} = import ./home.nix;
           }
         ];
       };
