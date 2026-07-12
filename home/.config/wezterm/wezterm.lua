@@ -21,7 +21,7 @@ if is_darwin then
 elseif is_linux then
   config.window_decorations = "TITLE | RESIZE"
 elseif is_windows then
-  config.window_decorations = "RESIZE"
+  config.window_decorations = "TITLE | RESIZE"
 end
 
 -- WSL: default to the Ubuntu distribution
