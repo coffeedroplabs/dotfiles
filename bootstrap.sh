@@ -139,11 +139,15 @@ case "$OS" in
     # symlink into /nix/store). Using $DIR keeps it clone-location-agnostic.
     if [ -n "$WIN_USER" ]; then
       WIN_WEZTERM="/mnt/c/Users/$WIN_USER/.wezterm.lua"
+      # Remove stale loader without extension (legacy bootstrap bug)
+      rm -f "/mnt/c/Users/$WIN_USER/.wezterm"
       LINUX_PATH="$DIR/home/.config/wezterm/wezterm.lua"
       # Use forward slashes in the WSL UNC path -- avoids backslash escaping bugs
       FORWARD_PATH=$(printf '%s' "$LINUX_PATH" | sed 's|^/mnt/c/|C:/|')
       printf 'return dofile(\n  [[//wsl$/%s%s]]\n)\n' "$WSL_DISTRO" "$FORWARD_PATH" > "$WIN_WEZTERM"
-      echo "Windows WezTerm loader written to $WIN_WEZTERM"
+      echo "Windows WezTerm loader written to: $WIN_WEZTERM"
+      echo "Contents:"
+      cat "$WIN_WEZTERM"
       echo "Install Hack Nerd Font on Windows: see README.md"
     else
       echo "Could not detect Windows username; skip .wezterm.lua manually (see README.md)"
