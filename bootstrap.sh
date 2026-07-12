@@ -122,13 +122,16 @@ case "$OS" in
     fi
 
     step "7/7  system + Windows-side config"
-    # /etc/wsl.conf
-    if ! sudo diff -q "$DIR/wsl.conf" /etc/wsl.conf >/dev/null 2>&1; then
-      sudo cp "$DIR/wsl.conf" /etc/wsl.conf
+    # /etc/wsl.conf — personalize username before copying
+    WSL_CONF_TMP=$(mktemp)
+    sed "s/PLACEHOLDER_USERNAME/${REAL_USER}/" "$DIR/wsl.conf" > "$WSL_CONF_TMP"
+    if ! sudo diff -q "$WSL_CONF_TMP" /etc/wsl.conf >/dev/null 2>&1; then
+      sudo cp "$WSL_CONF_TMP" /etc/wsl.conf
       echo "wsl.conf updated. Run 'wsl --shutdown' from Windows to apply, then reopen."
     else
       echo "wsl.conf already in sync"
     fi
+    rm -f "$WSL_CONF_TMP"
 
     # Windows-side WezTerm loader.
     # The \\wsl$\ share does not follow symlinks, so the loader must point at the
