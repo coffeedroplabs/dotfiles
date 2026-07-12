@@ -1,20 +1,42 @@
 local wezterm = require("wezterm")
-
 local config = wezterm.config_builder()
 
-config.color_scheme = "rose-pine-moon"
-config.font = wezterm.font("Hack Nerd Font")
-config.font_size = 15.0
-config.window_background_opacity = 0.8
-config.macos_window_background_blur = 50
-config.hide_tab_bar_if_only_one_tab = true
-config.window_decorations = "RESIZE"
+-- Platform detection
+local is_windows = wezterm.target_triple:find("windows") ~= nil
+local is_darwin = wezterm.target_triple:find("darwin") ~= nil
+local is_linux = wezterm.target_triple:find("linux") ~= nil
 
--- Windows-side WezTerm needs TITLE decorations and launches wsl.exe directly.
-local target = wezterm.target_triple
-if target:find("windows") then
+-- Font
+config.font = wezterm.font("Hack Nerd Font")
+config.font_size = 13
+
+-- Color scheme
+config.color_scheme = "Tokyo Night"
+
+-- Window settings (platform-specific)
+if is_darwin then
+  config.window_decorations = "RESIZE"
+  config.macos_window_background_blur = 20
+  config.window_background_opacity = 0.95
+elseif is_linux then
   config.window_decorations = "TITLE | RESIZE"
-  config.default_prog = { "wsl.exe", "--cd", "~" }
+elseif is_windows then
+  config.window_decorations = "RESIZE"
 end
+
+-- WSL: default to the Ubuntu distribution
+if is_windows then
+  config.default_prog = { "wsl.exe", "-d", "Ubuntu" }
+end
+
+-- Tab bar
+config.hide_tab_bar_if_only_one_tab = true
+config.use_fancy_tab_bar = false
+
+-- Cursor
+config.default_cursor_style = "BlinkingBlock"
+
+-- Scrollback
+config.scrollback_lines = 10000
 
 return config
