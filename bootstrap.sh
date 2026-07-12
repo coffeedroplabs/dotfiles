@@ -140,8 +140,9 @@ case "$OS" in
     if [ -n "$WIN_USER" ]; then
       WIN_WEZTERM="/mnt/c/Users/$WIN_USER/.wezterm.lua"
       LINUX_PATH="$DIR/home/.config/wezterm/wezterm.lua"
-      BACKSLASH_PATH=$(printf '%s' "$LINUX_PATH" | tr '/' '\\')
-      printf 'return dofile(\n  [[\\\\wsl$\\%s%s]]\n)\n' "$WSL_DISTRO" "$BACKSLASH_PATH" > "$WIN_WEZTERM"
+      # Use forward slashes in the WSL UNC path -- avoids backslash escaping bugs
+      FORWARD_PATH=$(printf '%s' "$LINUX_PATH" | sed 's|^/mnt/c/|C:/|')
+      printf 'return dofile(\n  [[//wsl$/%s%s]]\n)\n' "$WSL_DISTRO" "$FORWARD_PATH" > "$WIN_WEZTERM"
       echo "Windows WezTerm loader written to $WIN_WEZTERM"
       echo "Install Hack Nerd Font on Windows: see README.md"
     else
