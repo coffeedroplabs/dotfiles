@@ -26,7 +26,7 @@ end
 
 -- WSL: default to the Ubuntu distribution
 if is_windows then
-  config.default_prog = { "wsl.exe", "-d", "Ubuntu" }
+  config.default_domain = "WSL:Ubuntu"
 end
 
 -- Tab bar
