@@ -17,6 +17,8 @@ in
     jq        # json on the command line
     lazygit
     neovim
+    nodejs_26  # Node.js 26
+    pnpm       # Package manager
     # the font everything renders in
     nerd-fonts.hack
   ] ++ lib.optionals (!isDarwin) [
@@ -26,12 +28,28 @@ in
   fonts.fontconfig.enable = true;
   home.sessionVariables.EDITOR = "nvim";
 
+  # Paths for user-installed tooling outside the Nix store (sourced for every shell).
+  home.sessionPath = [
+    "$HOME/.local/bin"      # pipx
+    "$HOME/.npm-global/bin" # npm global prefix (e.g. gnhf)
+    "$HOME/.opencode/bin"   # opencode CLI
+  ];
+
+  home.sessionVariables.DOTNET_ROOT = "$HOME/.dotnet"; # .NET SDK user install
+
   programs.zsh = {
     enable = true;
     autosuggestion.enable = true;      # ghost text from history
     syntaxHighlighting.enable = true;  # commands turn green when valid
     initContent = ''
       bindkey '^f' autosuggest-accept
+
+      export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"
+
+      # Also add npm-global here so it resolves in every interactive shell even
+      # when the HM session-vars guard has already fired in an inherited env.
+      # typeset -U path dedupes against the sessionPath entry.
+      export PATH="$HOME/.npm-global/bin:$HOME/.opencode/bin:$PATH"
     '';
     shellAliases = {
       ".." = "cd ..";

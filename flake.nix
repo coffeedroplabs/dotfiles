@@ -19,7 +19,7 @@
     herdr.url = "github:ogulcancelik/herdr";
   };
 
-  outputs = inputs@{ self, nixpkgs, nixpkgs-darwin, nix-darwin, nix-homebrew, home-manager, herdr, ... }:
+  outputs = inputs@{ self, nixpkgs, nix-darwin, nix-homebrew, home-manager, herdr, ... }:
   let
     # The one username line to change if this isn't your machine.
     # bootstrap.sh offers to rewrite this for you if your macOS username differs.
