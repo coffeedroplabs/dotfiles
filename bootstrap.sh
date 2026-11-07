@@ -122,7 +122,7 @@ case "$OS" in
     fi
 
     step "7/7  system + Windows-side config"
-    # /etc/wsl.conf — personalize username before copying
+    # /etc/wsl.conf - personalize username before copying
     WSL_CONF_TMP=$(mktemp)
     sed "s/PLACEHOLDER_USERNAME/${REAL_USER}/" "$DIR/wsl.conf" > "$WSL_CONF_TMP"
     if ! sudo diff -q "$WSL_CONF_TMP" /etc/wsl.conf >/dev/null 2>&1; then

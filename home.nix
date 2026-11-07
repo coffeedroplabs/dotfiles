@@ -16,9 +16,12 @@ in
     fzf       # fuzzy finder
     jq        # json on the command line
     lazygit
+    awscli2   # aws cli, including sso login
+    flyctl    # fly.io cli
     neovim
     nodejs_26  # Node.js 26
     pnpm       # Package manager
+    cursor-cli # cursor agent - provides `cursor-agent` (alias `agent` added below)
     # the font everything renders in
     nerd-fonts.hack
   ] ++ lib.optionals (!isDarwin) [
@@ -30,9 +33,8 @@ in
 
   # Paths for user-installed tooling outside the Nix store (sourced for every shell).
   home.sessionPath = [
-    "$HOME/.local/bin"      # pipx
+    "$HOME/.local/bin"      # pipx and custom agent tools
     "$HOME/.npm-global/bin" # npm global prefix (e.g. gnhf)
-    "$HOME/.opencode/bin"   # opencode CLI
   ];
 
   home.sessionVariables.DOTNET_ROOT = "$HOME/.dotnet"; # .NET SDK user install
@@ -49,7 +51,52 @@ in
       # Also add npm-global here so it resolves in every interactive shell even
       # when the HM session-vars guard has already fired in an inherited env.
       # typeset -U path dedupes against the sessionPath entry.
-      export PATH="$HOME/.npm-global/bin:$HOME/.opencode/bin:$PATH"
+      export PATH="$HOME/.npm-global/bin:$PATH"
+
+      # dsh 0.1.1-rc.2 always mounts cordis-plugin-hmr to watch its patch files,
+      # and that plugin throws unless Node runs with --expose-internals, a flag
+      # Node refuses to read from NODE_OPTIONS. Invoke its entry point directly.
+      dsh() {
+        local entry="$HOME/.npm-global/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
+        if [[ -f $entry ]]; then
+          node --expose-internals "$entry" "$@"
+        else
+          command dsh "$@"
+        fi
+      }
+
+      wt() {
+        case "''${1:-}" in
+          new|add)
+            local branch="$2"
+            [ -n "$branch" ] || { echo "Usage: wt new <branch>"; return 1; }
+            local repo_root
+            repo_root=$(git rev-parse --show-toplevel) || return 1
+            local wt_dir="$repo_root/.worktrees/$branch"
+            mkdir -p "$repo_root/.worktrees"
+            if git show-ref --verify --quiet "refs/heads/$branch"; then
+              git worktree add "$wt_dir" "$branch"
+            else
+              git worktree add -b "$branch" "$wt_dir" HEAD
+            fi
+            cd "$wt_dir"
+            ;;
+          rm|remove)
+            local branch="$2"
+            [ -n "$branch" ] || { echo "Usage: wt rm <branch>"; return 1; }
+            local repo_root
+            repo_root=$(git rev-parse --show-toplevel) || return 1
+            local wt_dir="$repo_root/.worktrees/$branch"
+            git worktree remove "$wt_dir" && git branch -d "$branch" 2>/dev/null || true
+            ;;
+          ls|list)
+            git worktree list
+            ;;
+          *)
+            echo "Usage: wt [new <branch> | rm <branch> | ls]"
+            ;;
+        esac
+      }
     '';
     shellAliases = {
       ".." = "cd ..";
@@ -88,13 +135,42 @@ in
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/nvim";
   home.file.".config/herdr".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/herdr";
+  home.file.".config/claude-mcp/deepseek-executor/server.py".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/claude-mcp/deepseek-executor/server.py";
+  home.file.".config/claude-mcp/deepseek-executor/.env.example".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/claude-mcp/deepseek-executor/.env.example";
   home.file.".claude/settings.json".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/settings.json";
+  home.file.".claude/hooks/statusline-context.sh".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/hooks/statusline-context.sh";
 
   home.file.".claude/CLAUDE.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  home.file.".claude/commands/deepseek-run.md".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/commands/deepseek-run.md";
   home.file.".codex/AGENTS.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
-  home.file.".config/opencode/AGENTS.md".source =
+  home.file.".gemini/config/AGENTS.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+  home.file.".gemini/config/GEMINI.md".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
+
+  home.file.".codex/config.toml".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.codex/config.toml";
+  home.file.".codex/hooks.json".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.codex/hooks.json";
+  home.file.".gemini/config/mcp_config.json".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.gemini/config/mcp_config.json";
+  home.file.".gemini/config/hooks.json".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.gemini/config/hooks.json";
+  home.file.".gemini/hooks/herdr-agent-state.sh".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.gemini/hooks/herdr-agent-state.sh";
+
+  home.file.".local/bin/agent-notify-done".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.local/bin/agent-notify-done";
+  home.file.".local/bin/claude-deepseek".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.local/bin/claude-deepseek";
+
+  # cursor-cli only installs `cursor-agent`; upstream installer also provides `agent` alias
+  home.file.".local/bin/agent".source = "${pkgs.cursor-cli}/bin/cursor-agent";
 }

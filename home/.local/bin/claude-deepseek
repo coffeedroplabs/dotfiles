@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Standalone Claude Code runner powered by DeepSeek API
+# Follows https://api-docs.deepseek.com/guides/anthropic_api/
+
+ENV_FILE="${DEEPSEEK_ENV_FILE:-$HOME/.config/claude-mcp/deepseek-executor/.env}"
+if [ -f "$ENV_FILE" ]; then
+  KEY=$(grep -E "^DEEPSEEK_API_KEY=" "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'")
+  export ANTHROPIC_API_KEY="$KEY"
+  export ANTHROPIC_AUTH_TOKEN="$KEY"
+fi
+
+if [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+  echo "Error: DEEPSEEK_API_KEY is not set in $ENV_FILE or environment." >&2
+  exit 1
+fi
+
+export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
+export ANTHROPIC_MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
+
+exec claude "$@"

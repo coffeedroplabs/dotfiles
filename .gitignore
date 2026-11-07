@@ -8,6 +8,12 @@ home/.config/herdr/*.sock
 result
 result-*
 
+# DeepSeek MCP secrets
+home/.config/claude-mcp/deepseek-executor/.env
+*.env
+__pycache__/
+*.pyc
+
 # editor junk
 *.swp
 *.swo
