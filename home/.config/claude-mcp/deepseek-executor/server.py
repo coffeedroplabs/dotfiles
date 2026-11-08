@@ -545,7 +545,14 @@ def apply_blocks(content: str, blocks: list[tuple[list[str], list[str]]]) -> str
     return "".join(lines)
 
 
-@mcp.tool(title="Implement file with DeepSeek", annotations=WRITES_FILE)
+# Without structured_output=False the str return also goes out as {"result": ...}
+# structured content, which Claude Code shows in place of the text, so the diff
+# would reach Claude JSON-escaped.
+@mcp.tool(
+    title="Implement file with DeepSeek",
+    annotations=WRITES_FILE,
+    structured_output=False,
+)
 async def implement_file_with_deepseek(
     ctx: Context,
     file_path: str,
@@ -599,7 +606,9 @@ async def implement_file_with_deepseek(
         )
 
 
-@mcp.tool(title="Patch file with DeepSeek", annotations=WRITES_FILE)
+@mcp.tool(
+    title="Patch file with DeepSeek", annotations=WRITES_FILE, structured_output=False
+)
 async def patch_file_with_deepseek(
     ctx: Context,
     file_path: str,

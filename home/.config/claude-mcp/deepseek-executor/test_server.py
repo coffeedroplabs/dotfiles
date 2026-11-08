@@ -208,6 +208,8 @@ class ExecutorTest(unittest.TestCase):
         result = asyncio.run(run())
         text = result.content[0].text
         self.assertEqual(result.is_error, not ok, text)
+        # Claude Code prefers structured content over text, which would JSON-escape the diff.
+        self.assertIsNone(result.structured_content)
         return text
 
     def patch(self, path: Path, **args) -> str:
@@ -424,6 +426,7 @@ class ProtocolTest(ExecutorTest):
             self.assertTrue(tool.annotations.destructive_hint)
             self.assertFalse(tool.annotations.idempotent_hint)
             self.assertTrue(tool.annotations.open_world_hint)
+            self.assertIsNone(tool.output_schema)
             properties = tool.input_schema["properties"]
             self.assertNotIn("ctx", properties)
             self.assertIn("none", json.dumps(properties["reasoning_effort"]))
