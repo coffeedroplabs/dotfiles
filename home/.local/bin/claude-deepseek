@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
-# Standalone Claude Code runner powered by DeepSeek API
-# Follows https://api-docs.deepseek.com/guides/anthropic_api/
+# Claude Code running on DeepSeek's Anthropic-compatible API.
+# Settings follow https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code
+set -euo pipefail
 
 ENV_FILE="${DEEPSEEK_ENV_FILE:-$HOME/.config/claude-mcp/deepseek-executor/.env}"
-if [ -f "$ENV_FILE" ]; then
-  KEY=$(grep -E "^DEEPSEEK_API_KEY=" "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'")
-  export ANTHROPIC_API_KEY="$KEY"
-  export ANTHROPIC_AUTH_TOKEN="$KEY"
+KEY="${DEEPSEEK_API_KEY:-}"
+if [ -z "$KEY" ] && [ -f "$ENV_FILE" ]; then
+  KEY=$(grep -E '^DEEPSEEK_API_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d "\"'\r" || true)
 fi
-
-if [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
-  echo "Error: DEEPSEEK_API_KEY is not set in $ENV_FILE or environment." >&2
+if [ -z "$KEY" ]; then
+  echo "Error: set DEEPSEEK_API_KEY or put DEEPSEEK_API_KEY=... in $ENV_FILE." >&2
   exit 1
 fi
 
+MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
 export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
-export ANTHROPIC_MODEL="${DEEPSEEK_MODEL:-deepseek-flash}"
+export ANTHROPIC_AUTH_TOKEN="$KEY"
+unset ANTHROPIC_API_KEY
+# Claude Code assumes a 200K window for model ids it does not know; [1m] unlocks the real 1M.
+export ANTHROPIC_MODEL="${MODEL}[1m]"
+# Pin the aliases so /model and subagents (CLAUDE_CODE_SUBAGENT_MODEL=sonnet in settings.json)
+# stay on this model instead of DeepSeek's own claude-* remap (claude-opus -> deepseek-v4-pro).
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${MODEL}[1m]"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="${MODEL}[1m]"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432
 
 exec claude "$@"

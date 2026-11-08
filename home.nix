@@ -22,6 +22,7 @@ in
     nodejs_26  # Node.js 26
     pnpm       # Package manager
     cursor-cli # cursor agent - provides `cursor-agent` (alias `agent` added below)
+    uv         # runs the deepseek-executor MCP server (registered below)
     # the font everything renders in
     nerd-fonts.hack
   ] ++ lib.optionals (!isDarwin) [
@@ -137,6 +138,9 @@ in
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/herdr";
   home.file.".config/claude-mcp/deepseek-executor/server.py".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/claude-mcp/deepseek-executor/server.py";
+  # uv looks for the lock next to the script path it is given, i.e. next to this symlink.
+  home.file.".config/claude-mcp/deepseek-executor/server.py.lock".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/claude-mcp/deepseek-executor/server.py.lock";
   home.file.".config/claude-mcp/deepseek-executor/.env.example".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.config/claude-mcp/deepseek-executor/.env.example";
   home.file.".claude/settings.json".source =
@@ -173,4 +177,36 @@ in
 
   # cursor-cli only installs `cursor-agent`; upstream installer also provides `agent` alias
   home.file.".local/bin/agent".source = "${pkgs.cursor-cli}/bin/cursor-agent";
+
+  # ~/.claude.json is Claude Code's mutable state, so it can't be a symlink; register through
+  # the CLI instead, and only when the spec differs so live sessions' state isn't rewritten
+  # on every switch. The profile path to uv survives uv upgrades and doesn't depend on PATH.
+  home.activation.deepseekExecutorMcp =
+    let
+      spec = builtins.toJSON {
+        type = "stdio";
+        command = "${config.home.profileDirectory}/bin/uv";
+        args = [
+          "run"
+          "--script"
+          "${config.home.homeDirectory}/.config/claude-mcp/deepseek-executor/server.py"
+        ];
+        env = { };
+      };
+      jq = "${pkgs.jq}/bin/jq";
+    in
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      # Activation runs with a minimal PATH. Linux uses the native installer, macOS the Homebrew cask.
+      claude=""
+      for candidate in "$HOME/.local/bin/claude" /opt/homebrew/bin/claude; do
+        if [ -x "$candidate" ]; then claude="$candidate"; break; fi
+      done
+      if [ -z "$claude" ]; then
+        echo "deepseek-executor: claude not installed yet, skipping MCP registration"
+      elif [ "$(${jq} -cS '.mcpServers["deepseek-executor"] // empty' "$HOME/.claude.json" 2>/dev/null)" \
+          != "$(${jq} -cS . <<< ${lib.escapeShellArg spec})" ]; then
+        run --silence "$claude" mcp remove --scope user deepseek-executor || true
+        run "$claude" mcp add-json --scope user deepseek-executor ${lib.escapeShellArg spec}
+      fi
+    '';
 }

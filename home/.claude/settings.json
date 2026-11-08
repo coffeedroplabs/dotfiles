@@ -2,6 +2,12 @@
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
+  "permissions": {
+    "allow": [
+      "mcp__deepseek-executor__implement_file_with_deepseek",
+      "mcp__deepseek-executor__patch_file_with_deepseek"
+    ]
+  },
   "model": "opus",
   "hooks": {
     "SessionStart": [
@@ -10,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '$HOME/.claude/hooks/herdr-agent-state.sh' session",
+            "command": "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session",
             "timeout": 10
           }
         ]
@@ -61,24 +67,17 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash '$HOME/.claude/hooks/statusline-context.sh'",
+    "command": "bash \"$HOME/.claude/hooks/statusline-context.sh\"",
     "padding": 0
   },
   "alwaysThinkingEnabled": true,
   "modelSettings": {
     "claude-opus-5-5": {
-      "effortLevel": "high",
+      "effortLevel": "xhigh",
       "autoCompactWindow": 200000
     }
   },
   "autoMemoryEnabled": true,
-  "permissions": {
-    "allow": [
-      "mcp__deepseek-executor__implement_file_with_deepseek",
-      "mcp__deepseek-executor__patch_file_with_deepseek",
-      "mcp__deepseek-executor__generate_code_with_deepseek"
-    ]
-  },
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-ansi",
   "agentPushNotifEnabled": true

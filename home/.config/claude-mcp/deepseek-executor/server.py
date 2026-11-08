@@ -6,32 +6,84 @@
 # ]
 # ///
 """
-DeepSeek Executor MCP Server for Claude Code Orchestrator.
-Delegates heavy code generation, surgical patches, and file modifications to api.deepseek.com.
-Powered by DeepSeek-V4.1-Flash (deepseek-flash) with prompt prefix caching.
+DeepSeek executor MCP server: Claude Code orchestrates, DeepSeek writes files on disk.
+When to delegate is decided by the /deepseek-run command, not here.
 """
 
+import json
 import logging
 import os
 import re
 import sys
 from pathlib import Path
-from mcp.server.fastmcp import FastMCP
-from openai import OpenAI
 
-# Stdio safety: ensure all logging routes to stderr, never stdout
+from mcp.server.fastmcp import FastMCP
+from openai import APIError, AsyncOpenAI
+from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletionMessage
+
+# The stdio transport owns stdout; anything logged there corrupts the JSON-RPC stream.
 logging.basicConfig(
     level=logging.INFO,
     stream=sys.stderr,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-logger = logging.getLogger("deepseek-executor")
 
 mcp = FastMCP("deepseek-executor")
 
-CONFIG_DIR = Path.home() / ".config" / "claude-mcp" / "deepseek-executor"
-ENV_FILE = CONFIG_DIR / ".env"
+ENV_FILE = Path.home() / ".config" / "claude-mcp" / "deepseek-executor" / ".env"
 DEFAULT_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+
+SEARCH, DIVIDER, REPLACE = "<<<<<<< SEARCH", "=======", ">>>>>>> REPLACE"
+
+IMPLEMENT_SYSTEM = (
+    "You are an expert software engineer executing a spec from a principal architect. "
+    "Write clean, production-ready, idiomatic code with no placeholders. "
+    "Deliver the complete file by calling write_file exactly once."
+)
+
+# The file arrives as a tool argument rather than as reply text: asked for raw file text,
+# deepseek-flash sometimes appends a stray "</parameter>" from its tool-call template
+# (about 1 reply in 12) or wraps the file in fences. DeepSeek's own parser strips the
+# real template delimiters from tool arguments. Thinking mode rejects a forced tool_choice,
+# so the system prompt asks for the call instead.
+WRITE_FILE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "write_file",
+        "description": "Save the complete content of the target file.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The entire file content, exactly as it should be saved.",
+                }
+            },
+            "required": ["content"],
+        },
+    },
+}
+
+PATCH_SYSTEM = (
+    "You are an expert software engineer making precise edits to an existing file.\n"
+    "Reply with one or more blocks in exactly this format:\n\n"
+    f"{SEARCH}\n"
+    "whole lines copied exactly from the current file\n"
+    f"{DIVIDER}\n"
+    "replacement lines\n"
+    f"{REPLACE}\n\n"
+    "Rules:\n"
+    "1. SEARCH holds whole lines that match the file character-for-character, including indentation.\n"
+    "2. Each SEARCH must match exactly one place in the file; add surrounding lines until it is unique.\n"
+    "3. To delete lines, leave the replacement section empty.\n"
+    "4. Blocks are applied in order, each against the result of the previous one.\n"
+    "5. Reply with blocks only, no commentary."
+)
+
+
+class ExecutorError(Exception):
+    """A failure reported back to Claude as the tool result."""
 
 
 def load_api_key() -> str:
@@ -41,339 +93,295 @@ def load_api_key() -> str:
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line.startswith("DEEPSEEK_API_KEY=") and not line.startswith("#"):
+            if line.startswith("DEEPSEEK_API_KEY="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
     return ""
 
 
-def get_client() -> OpenAI:
+def get_client() -> AsyncOpenAI:
     api_key = load_api_key()
     if not api_key:
-        raise ValueError(
-            "DEEPSEEK_API_KEY is not set. Please set the DEEPSEEK_API_KEY environment variable "
-            f"or put DEEPSEEK_API_KEY=your_key in {ENV_FILE}"
+        raise ExecutorError(
+            f"DEEPSEEK_API_KEY is not set. Export it or put DEEPSEEK_API_KEY=... in {ENV_FILE}."
         )
     base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
+    # Thinking mode can take minutes on a large file. Retries are left to the
+    # orchestrator so a timed-out request is never silently re-run and re-billed.
+    return AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=600.0, max_retries=0)
 
 
-def extract_code_block(text: str, file_path: str) -> str:
-    """
-    Extract raw code from markdown fences if present.
-    If multiple fenced blocks exist, select the longest code block to avoid preamble snippets.
-    """
-    text = text.strip()
-    if file_path.endswith((".md", ".markdown")):
-        return text
-
-    blocks = re.findall(r"```(?:\w+)?\s*\n([\s\S]*?)\n```", text)
-    if blocks:
-        # Return the largest code block (by line count or char length)
-        return max(blocks, key=len).strip()
-
-    # Fallback: if output starts with fences but lacks clean trailing newline
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if len(lines) >= 2 and lines[-1].strip() == "```":
-            return "\n".join(lines[1:-1]).strip()
-
-    return text
+def resolve_target(file_path: str) -> Path:
+    target = Path(file_path)
+    if not target.is_absolute():
+        # The server's cwd is wherever Claude Code was launched, not the directory
+        # Claude is working in (e.g. a worktree), so a relative path is ambiguous.
+        raise ExecutorError(f"file_path must be absolute, got '{file_path}'.")
+    target = target.resolve()
+    # The orchestrator reviews and reverts these writes with git, and they bypass
+    # Claude Code's checkpoints, so refuse paths git cannot see.
+    if not any((parent / ".git").exists() for parent in target.parents):
+        raise ExecutorError(f"'{target}' is not inside a git work tree.")
+    return target
 
 
-def build_context_blocks(context_files: list[str], base_dir: Path) -> str:
-    blocks = []
-    for ctx_path_str in context_files:
-        ctx_p = Path(ctx_path_str)
-        if not ctx_p.is_absolute():
-            ctx_p = (base_dir / ctx_p).resolve()
+def read_file(path: Path) -> str:
+    try:
+        # newline="" keeps CRLF intact instead of silently converting it to LF.
+        with path.open(encoding="utf-8", newline="") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        raise ExecutorError(f"Cannot read '{path}': {e}") from e
+
+
+def write_file(path: Path, content: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="") as f:
+            f.write(content)
+    except OSError as e:
+        raise ExecutorError(f"Cannot write '{path}': {e}") from e
+
+
+def read_context(context_files: list[str]) -> str:
+    bad = [
+        p for p in context_files if not (Path(p).is_absolute() and Path(p).is_file())
+    ]
+    if bad:
+        raise ExecutorError(
+            "context_files must be absolute paths to existing files: " + ", ".join(bad)
+        )
+    return "".join(
+        f'<file path="{p}">\n{read_file(Path(p))}\n</file>\n\n' for p in context_files
+    )
+
+
+def split_lines(text: str) -> list[str]:
+    """Split on \\n only, keeping endings; str.splitlines also breaks on \\f, \\u2028 and others."""
+    return re.findall(r"[^\n]*\n|[^\n]+\Z", text)
+
+
+def bare(line: str) -> str:
+    return line.removesuffix("\n").removesuffix("\r")
+
+
+def format_usage(usage: CompletionUsage | None) -> str:
+    if usage is None:
+        return "Usage: unavailable."
+    hit = getattr(usage, "prompt_cache_hit_tokens", None) or 0
+    miss = getattr(usage, "prompt_cache_miss_tokens", None) or 0
+    reasoning = getattr(usage.completion_tokens_details, "reasoning_tokens", None) or 0
+    return (
+        f"Usage: prompt {usage.prompt_tokens} (cache hit {hit}, miss {miss}), "
+        f"completion {usage.completion_tokens} (reasoning {reasoning})."
+    )
+
+
+async def complete(
+    model: str, system: str, user: str, **request
+) -> tuple[ChatCompletionMessage, str]:
+    client = get_client()
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            **request,
+        )
+    except APIError as e:
+        raise ExecutorError(f"DeepSeek API error: {e}") from e
+    choice = response.choices[0]
+    if choice.finish_reason not in ("stop", "tool_calls"):
+        raise ExecutorError(
+            f"DeepSeek stopped with finish_reason='{choice.finish_reason}'; nothing was written. "
+            f"{format_usage(response.usage)}"
+        )
+    return choice.message, format_usage(response.usage)
+
+
+def build_prompt(
+    context: str, target: Path, current: str | None, instruction: str
+) -> str:
+    # Stable parts first: DeepSeek's context cache only hits on an exact prefix,
+    # so calls in one session that share context files reuse it.
+    prompt = context
+    if current is not None:
+        prompt += f'<current_file path="{target}">\n{current}\n</current_file>\n\n'
+    else:
+        prompt += f"Target file (new): {target}\n\n"
+    return prompt + f"Instructions:\n{instruction}\n"
+
+
+def file_content(message: ChatCompletionMessage) -> str:
+    calls = [c for c in message.tool_calls or [] if c.function.name == "write_file"]
+    if len(calls) != 1:
+        raise ExecutorError(
+            f"DeepSeek made {len(calls)} write_file calls (needs exactly 1); nothing was "
+            f"written. Reply text: {(message.content or '')[:400]!r}"
+        )
+    try:
+        content = json.loads(calls[0].function.arguments)["content"]
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        raise ExecutorError(
+            f"Malformed write_file arguments ({e!r}); nothing was written."
+        ) from e
+    if not isinstance(content, str):
+        raise ExecutorError("write_file content is not a string; nothing was written.")
+    return content
+
+
+def parse_blocks(reply: str) -> list[tuple[list[str], list[str]]]:
+    blocks: list[tuple[list[str], list[str]]] = []
+    search: list[str] = []
+    replace: list[str] = []
+    state = None
+    for raw in split_lines(reply):
+        line = bare(raw)
+        marker = line.rstrip()
+        if state is None:
+            if marker == SEARCH:
+                state, search, replace = "search", [], []
+            elif marker in (DIVIDER, REPLACE):
+                raise ExecutorError(f"Malformed reply: '{marker}' outside a block.")
+            # Anything else between blocks (prose, fences) carries no edit.
+        elif state == "search":
+            if marker == DIVIDER:
+                if not search:
+                    raise ExecutorError("Malformed reply: empty SEARCH section.")
+                state = "replace"
+            elif marker in (SEARCH, REPLACE):
+                raise ExecutorError(
+                    f"Malformed reply: '{marker}' inside a SEARCH section."
+                )
+            else:
+                search.append(line)
         else:
-            ctx_p = ctx_p.resolve()
-
-        if ctx_p.exists():
-            try:
-                content = ctx_p.read_text(encoding="utf-8")
-                blocks.append(f"--- Context File: {ctx_path_str} ---\n{content}\n")
-            except Exception as e:
-                blocks.append(f"--- Context File: {ctx_path_str} (read error: {e}) ---")
-    return "\n".join(blocks)
-
-
-@mcp.tool()
-def implement_file_with_deepseek(
-    file_path: str,
-    instruction: str,
-    context_files: list[str] | None = None,
-    model: str = "",
-    cwd: str = "",
-) -> str:
-    """
-    Delegate full file creation or complete rewrite directly on disk to DeepSeek.
-    Use this tool when creating a new file or rewriting a small file (<100 lines).
-    For modifying existing files over 100 lines, use patch_file_with_deepseek instead.
-
-    Args:
-        file_path: Absolute or relative path to the file to create or rewrite.
-        instruction: Detailed instructions, architecture spec, and requirements for the file.
-        context_files: List of file paths containing relevant interfaces, schemas, or dependencies.
-        model: Optional model override (defaults to 'deepseek-flash' / DeepSeek-V4.1-Flash).
-        cwd: Optional working directory for resolving relative paths (defaults to current working directory).
-    """
-    try:
-        client = get_client()
-    except Exception as e:
-        return f"Configuration Error: {e}"
-
-    base_dir = Path(cwd).resolve() if cwd else Path.cwd()
-    target = Path(file_path)
-    if not target.is_absolute():
-        target = (base_dir / target).resolve()
-    else:
-        target = target.resolve()
-
-    selected_model = model or DEFAULT_MODEL
-    actual_context_files = context_files if context_files is not None else []
-
-    existing_content = ""
-    if target.exists():
-        try:
-            existing_content = target.read_text(encoding="utf-8")
-        except Exception as e:
-            existing_content = f"<Could not read existing file: {e}>"
-
-    joined_context = build_context_blocks(actual_context_files, base_dir)
-
-    system_prompt = (
-        "You are an expert software engineer executor working under a principal architect. "
-        "Your role is to write clean, production-ready, bug-free, idiomatic code meeting "
-        "all provided specifications. Output code directly without conversational preamble or notes."
-    )
-
-    # Prompt ordering optimized for DeepSeek 64-token Prefix Caching:
-    # 1. System Prompt (static)
-    # 2. Shared Context Files (static across multiple files in the same session)
-    # 3. Target File & Existing Content
-    # 4. Dynamic Instructions (tail)
-    user_prompt = ""
-    if joined_context:
-        user_prompt += f"Supporting Context Files:\n{joined_context}\n\n"
-
-    user_prompt += f"Target File: {file_path}\n\n"
-
-    if existing_content:
-        user_prompt += f"Existing Content (to be replaced):\n```\n{existing_content}\n```\n\n"
-
-    user_prompt += f"Implementation Instructions:\n{instruction}\n\n"
-    user_prompt += (
-        "Generate the complete file content now. "
-        "Preserve existing functionality unless explicitly instructed to change it. "
-        "Ensure all imports, types, and logic are fully implemented without placeholders."
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            if marker == REPLACE:
+                blocks.append((search, replace))
+                state = None
+            elif marker in (SEARCH, DIVIDER):
+                raise ExecutorError(
+                    f"Malformed reply: '{marker}' inside a replacement section. If the file "
+                    "itself contains marker lines, edit it with implement_file_with_deepseek."
+                )
+            else:
+                replace.append(line)
+    if state is not None:
+        raise ExecutorError("Malformed reply: unterminated block.")
+    if not blocks:
+        raise ExecutorError(
+            f"DeepSeek returned no SEARCH/REPLACE blocks:\n{reply[:400]}"
         )
-    except Exception as api_err:
-        return f"DeepSeek API Error: {api_err}"
-
-    generated_code = response.choices[0].message.content or ""
-    cleaned_code = extract_code_block(generated_code, str(target))
-
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(cleaned_code, encoding="utf-8")
-    except Exception as write_err:
-        return f"Disk Write Error for {file_path}: {write_err}"
-
-    line_count = len(cleaned_code.splitlines())
-    return (
-        f"Successfully implemented '{file_path}' using DeepSeek ({selected_model}).\n"
-        f"Wrote {line_count} lines ({len(cleaned_code)} bytes). Ready for test verification."
-    )
+    return blocks
 
 
-@mcp.tool()
-def patch_file_with_deepseek(
-    file_path: str,
-    instruction: str,
-    context_files: list[str] | None = None,
-    model: str = "",
-    cwd: str = "",
-) -> str:
-    """
-    Surgically edit an existing file using DeepSeek search-and-replace blocks.
-    Use this tool when modifying existing files (especially files over 100 lines)
-    to prevent unintended deletions, loss of comments, or full-file regressions.
-
-    Args:
-        file_path: Absolute or relative path to the existing file to modify.
-        instruction: Clear instructions specifying what changes to make.
-        context_files: List of file paths containing relevant interfaces or types.
-        model: Optional model override (defaults to 'deepseek-flash' / DeepSeek-V4.1-Flash).
-        cwd: Optional working directory for resolving relative paths.
-    """
-    try:
-        client = get_client()
-    except Exception as e:
-        return f"Configuration Error: {e}"
-
-    base_dir = Path(cwd).resolve() if cwd else Path.cwd()
-    target = Path(file_path)
-    if not target.is_absolute():
-        target = (base_dir / target).resolve()
-    else:
-        target = target.resolve()
-
-    if not target.exists():
-        return (
-            f"Error: Target file '{file_path}' does not exist on disk. "
-            "Use 'implement_file_with_deepseek' to create new files."
-        )
-
-    try:
-        original_content = target.read_text(encoding="utf-8")
-    except Exception as read_err:
-        return f"Error reading '{file_path}': {read_err}"
-
-    selected_model = model or DEFAULT_MODEL
-    actual_context_files = context_files if context_files is not None else []
-    joined_context = build_context_blocks(actual_context_files, base_dir)
-
-    system_prompt = (
-        "You are an expert software engineer executor performing precise surgical code edits.\n"
-        "You must output one or more search/replace blocks in the exact format shown below:\n\n"
-        "<<<<<<< SEARCH\n"
-        "exact original lines to replace\n"
-        "=======\n"
-        "replacement lines\n"
-        ">>>>>>> REPLACE\n\n"
-        "Rules:\n"
-        "1. Every SEARCH block must match the original file text character-for-character, including indentation and whitespace.\n"
-        "2. Provide enough context lines in the SEARCH block to make each match unique within the file.\n"
-        "3. Output ONLY SEARCH/REPLACE blocks. Do not add conversational text or code comments outside the blocks."
-    )
-
-    user_prompt = ""
-    if joined_context:
-        user_prompt += f"Supporting Context Files:\n{joined_context}\n\n"
-
-    user_prompt += f"Target File: {file_path}\n\n"
-    user_prompt += f"Current File Content:\n```\n{original_content}\n```\n\n"
-    user_prompt += f"Modification Instructions:\n{instruction}\n\n"
-    user_prompt += "Generate the SEARCH/REPLACE blocks now."
-
-    try:
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-    except Exception as api_err:
-        return f"DeepSeek API Error: {api_err}"
-
-    response_text = response.choices[0].message.content or ""
-
-    # Parse search/replace blocks
-    pattern = re.compile(
-        r"<<<<<<< SEARCH\r?\n([\s\S]*?)\r?\n=======\r?\n([\s\S]*?)\r?\n>>>>>>> REPLACE",
-        re.MULTILINE,
-    )
-    matches = pattern.findall(response_text)
-
-    if not matches:
-        return (
-            f"Error: DeepSeek did not return any valid search/replace blocks for '{file_path}'.\n"
-            f"Raw response preview:\n{response_text[:400]}"
-        )
-
-    current_content = original_content
-    applied_count = 0
-
-    for idx, (search_block, replace_block) in enumerate(matches, 1):
-        if search_block not in current_content:
-            # Fallback attempt: normalize line endings
-            norm_search = search_block.replace("\r\n", "\n")
-            norm_content = current_content.replace("\r\n", "\n")
-            if norm_search in norm_content:
-                current_content = norm_content.replace(norm_search, replace_block.replace("\r\n", "\n"), 1)
-                applied_count += 1
-                continue
-
-            return (
-                f"Patch Failure on block #{idx} in '{file_path}':\n"
-                f"SEARCH text was not found in the target file.\n"
-                f"Failed SEARCH snippet:\n```\n{search_block}\n```\n"
-                "Please retry with additional surrounding context lines."
+def apply_blocks(content: str, blocks: list[tuple[list[str], list[str]]]) -> str:
+    newline = "\r\n" if "\r\n" in content else "\n"
+    lines = split_lines(content)
+    for idx, (search, replace) in enumerate(blocks, 1):
+        bare_lines = [bare(line) for line in lines]
+        n = len(search)
+        starts = [
+            i for i in range(len(lines) - n + 1) if bare_lines[i : i + n] == search
+        ]
+        if len(starts) != 1:
+            snippet = "\n".join(search)
+            raise ExecutorError(
+                f"SEARCH block #{idx} matched {len(starts)} times (needs exactly 1); "
+                f"nothing was written.\n```\n{snippet}\n```"
             )
-
-        current_content = current_content.replace(search_block, replace_block, 1)
-        applied_count += 1
-
-    try:
-        target.write_text(current_content, encoding="utf-8")
-    except Exception as write_err:
-        return f"Disk Write Error while saving patch for '{file_path}': {write_err}"
-
-    new_line_count = len(current_content.splitlines())
-    return (
-        f"Successfully patched '{file_path}' using DeepSeek ({selected_model}).\n"
-        f"Applied {applied_count} replacement block(s). File now has {new_line_count} lines. "
-        "Ready for verification."
-    )
+        i = starts[0]
+        last = lines[i + n - 1]
+        new = [line + newline for line in replace]
+        if new:
+            # Keep the original ending of the last replaced line, which may be none at EOF.
+            new[-1] = replace[-1] + last[len(bare(last)) :]
+        lines[i : i + n] = new
+    return "".join(lines)
 
 
 @mcp.tool()
-def generate_code_with_deepseek(
+async def implement_file_with_deepseek(
+    file_path: str,
     instruction: str,
-    context: str = "",
-    language: str = "",
+    context_files: list[str] | None = None,
     model: str = "",
 ) -> str:
     """
-    Delegate code generation or refactoring to DeepSeek API without writing directly to disk.
-    Use this when you want to review the generated code block in-memory before writing.
+    Create a file, or replace an existing file entirely, with content written by DeepSeek.
 
     Args:
-        instruction: What code, query, or script to generate.
-        context: Supporting code, schemas, or constraints.
-        language: Programming language (e.g., 'typescript', 'python', 'sql').
-        model: Optional model override (defaults to 'deepseek-flash' / DeepSeek-V4.1-Flash).
+        file_path: Absolute path inside a git work tree.
+        instruction: Full spec for the file: behavior, interfaces, constraints.
+        context_files: Absolute paths of files DeepSeek should see (types, sister modules,
+            tests). Keep the order stable across calls so DeepSeek's prompt cache hits.
+        model: Model override; defaults to $DEEPSEEK_MODEL or deepseek-flash.
     """
-    try:
-        client = get_client()
-    except Exception as e:
-        return f"Configuration Error: {e}"
-
     selected_model = model or DEFAULT_MODEL
-    system_prompt = (
-        "You are an expert developer executor. Generate high-quality, production-ready code "
-        "following the exact specifications. Output code directly."
-    )
-
-    user_prompt = ""
-    if context:
-        user_prompt += f"Context:\n{context}\n\n"
-    if language:
-        user_prompt += f"Language: {language}\n\n"
-    user_prompt += f"Task:\n{instruction}\n"
-
     try:
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        target = resolve_target(file_path)
+        context = read_context(context_files or [])
+        current = read_file(target) if target.exists() else None
+        message, usage = await complete(
+            selected_model,
+            IMPLEMENT_SYSTEM,
+            build_prompt(context, target, current, instruction),
+            tools=[WRITE_FILE_TOOL],
         )
-        return response.choices[0].message.content or ""
-    except Exception as api_err:
-        return f"DeepSeek API Error: {api_err}"
+        content = file_content(message).strip("\n")
+        if not content:
+            raise ExecutorError("DeepSeek returned empty content; nothing was written.")
+        content += "\n"
+        if current is not None and "\r\n" in current:
+            content = content.replace("\r\n", "\n").replace("\n", "\r\n")
+        write_file(target, content)
+    except ExecutorError as e:
+        return f"Error: {e}"
+    return f"Wrote {target} ({len(split_lines(content))} lines) with {selected_model}. {usage}"
+
+
+@mcp.tool()
+async def patch_file_with_deepseek(
+    file_path: str,
+    instruction: str,
+    context_files: list[str] | None = None,
+    model: str = "",
+) -> str:
+    """
+    Edit an existing file with SEARCH/REPLACE blocks written by DeepSeek.
+    All blocks apply or none do; each SEARCH must match exactly one run of whole lines.
+
+    Args:
+        file_path: Absolute path of an existing file inside a git work tree.
+        instruction: What to change and why.
+        context_files: Absolute paths of files DeepSeek should see (types, callers, tests).
+            Keep the order stable across calls so DeepSeek's prompt cache hits.
+        model: Model override; defaults to $DEEPSEEK_MODEL or deepseek-flash.
+    """
+    selected_model = model or DEFAULT_MODEL
+    try:
+        target = resolve_target(file_path)
+        if not target.is_file():
+            raise ExecutorError(
+                f"'{target}' does not exist; use implement_file_with_deepseek to create it."
+            )
+        context = read_context(context_files or [])
+        current = read_file(target)
+        message, usage = await complete(
+            selected_model,
+            PATCH_SYSTEM,
+            build_prompt(context, target, current, instruction),
+        )
+        blocks = parse_blocks(message.content or "")
+        patched = apply_blocks(current, blocks)
+        write_file(target, patched)
+    except ExecutorError as e:
+        return f"Error: {e}"
+    return (
+        f"Patched {target}: {len(blocks)} block(s), now {len(split_lines(patched))} lines, "
+        f"with {selected_model}. {usage}"
+    )
 
 
 if __name__ == "__main__":
