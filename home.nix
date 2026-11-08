@@ -150,8 +150,8 @@ in
 
   home.file.".claude/CLAUDE.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
-  home.file.".claude/commands/deepseek-run.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/commands/deepseek-run.md";
+  home.file.".claude/skills/deepseek-run".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/.claude/skills/deepseek-run";
   home.file.".codex/AGENTS.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfiles}/home/AGENTS.md";
   home.file.".gemini/config/AGENTS.md".source =
@@ -192,6 +192,8 @@ in
           "${config.home.homeDirectory}/.config/claude-mcp/deepseek-executor/server.py"
         ];
         env = { };
+        # Skips the ToolSearch round trip Claude Code otherwise needs before the first call.
+        alwaysLoad = true;
       };
       jq = "${pkgs.jq}/bin/jq";
     in
