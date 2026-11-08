@@ -124,10 +124,10 @@ Optional extras. The repo manages their config, but not the tools themselves:
 
 | Tool | What uses it | How to get it |
 | --- | --- | --- |
-| Claude Code (`claude`) | The `cc` alias, Claude settings, the DeepSeek MCP registration | macOS: installed for you as a Homebrew cask. WSL: `curl -fsSL https://claude.ai/install.sh \| bash` |
-| Codex (`codex`) | The `co` alias, Codex hooks | `npm i -g @openai/codex` |
-| Antigravity (`agy`) | Antigravity hooks and MCP servers | [antigravity.google](https://antigravity.google) |
-| The `*-axi` CLIs | SessionStart hooks in Claude Code and Codex | `npm i -g gh-axi chrome-devtools-axi lavish-axi` |
+| Claude Code | The `cc` alias, Claude settings, the DeepSeek MCP registration | macOS: installed for you as a Homebrew cask<br>WSL: `curl -fsSL https://claude.ai/install.sh \| bash` |
+| Codex | The `co` alias, Codex hooks | `npm i -g @openai/codex` |
+| Antigravity | Antigravity hooks and MCP servers | [antigravity.google](https://antigravity.google) |
+| `*-axi` CLIs | SessionStart hooks in Claude Code and Codex | `npm i -g gh-axi chrome-devtools-axi lavish-axi` |
 | DeepSeek API key | `deepseek-executor` and `claude-deepseek` | [platform.deepseek.com](https://platform.deepseek.com) |
 
 The shell already has `~/.npm-global/bin` on `PATH`. Point npm at it once, before the global installs: `npm config set prefix ~/.npm-global`.
