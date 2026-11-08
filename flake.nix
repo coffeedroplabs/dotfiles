@@ -1,5 +1,5 @@
 {
-  description = "dotfiles";
+  description = "dripfiles: one-command Nix setup for macOS and WSL dev machines";
 
   inputs = {
     # Linux (WSL Ubuntu)
