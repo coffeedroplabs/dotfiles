@@ -25,5 +25,7 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL="${MODEL}[1m]"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="${MODEL}[1m]"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
 export CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432
+export CLAUDE_CODE_EFFORT_LEVEL=max
 
-exec claude "$@"
+# DeepSeek delegating to the DeepSeek executor only adds a round trip.
+exec claude --disallowedTools mcp__deepseek-executor "$@"

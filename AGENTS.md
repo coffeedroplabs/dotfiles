@@ -18,7 +18,7 @@
 - `home/AGENTS.md` is shared across Claude, Codex, and Antigravity via symlinks in `home.nix`.
 - The `cc` and `co` shell aliases are high-agency shortcuts (`claude --dangerously-skip-permissions` and `codex --full-auto`). They are deliberate.
 - Git identity is not set declaratively. Set it manually with `git config --global`.
-- The `deepseek-executor` MCP server is registered by `home.activation.deepseekExecutorMcp` in `home.nix`. `~/.claude.json` is Claude's mutable state, so change the spec there instead of running `claude mcp add` by hand. Server tests: `uv run --script home/.config/claude-mcp/deepseek-executor/test_server.py`.
+- The `deepseek-executor` MCP server is registered by `home.activation.deepseekExecutorMcp` in `home.nix`. `~/.claude.json` is Claude's mutable state, so change the spec there instead of running `claude mcp add` by hand. Server tests: `uv run --script home/.config/claude-mcp/deepseek-executor/test_server.py`; after changing its dependencies, `uv lock --script server.py`. The delegation workflow is the `/deepseek-run` skill in `home/.claude/skills/deepseek-run/`. Each executor call appends a line to `~/.local/state/deepseek-executor/calls.jsonl` (outcome, tokens, effort, duration).
 
 ## Maintaining this file
 
