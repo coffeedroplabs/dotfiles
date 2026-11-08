@@ -8,7 +8,6 @@
 [![nixpkgs 26.05][nixpkgs-shield]][nixpkgs-url]
 
 <!-- PROJECT HEADER -->
-<br />
 <div align="center">
   <h3 align="center">dripfiles</h3>
 
@@ -81,31 +80,33 @@ Both get the same shell, editor, terminal and AI-agent setup. Why it is built th
 
 ### What you get
 
-| Area | What you get | Platforms |
-| --- | --- | --- |
-| CLI packages | ripgrep, fd, fzf, jq, lazygit, Neovim, awscli2, flyctl, Node.js 26, pnpm, uv, cursor-cli, Hack Nerd Font | macOS, WSL |
-| Shell | zsh with autosuggestions and syntax highlighting, starship prompt, git aliases, a `wt` worktree helper | macOS, WSL |
-| Editor | Neovim on lazy.nvim: rose-pine moon, snacks picker, oil, Neogit + diffview, gitsigns blame, which-key, a Windows clipboard bridge under WSL | macOS, WSL |
-| Terminal | WezTerm with Tokyo Night and Hack Nerd Font: blurred and translucent on macOS, opens straight into WSL on Windows | macOS, WSL |
-| Workspace | [herdr][herdr-url] agent multiplexer with tmux-style `Ctrl+B` keys, worktree shortcuts and a chime when an agent finishes | macOS, WSL |
-| AI agents | One shared `AGENTS.md` for Claude Code, Codex and Antigravity, session hooks, desktop notifications, a Claude statusline with a 300k-token budget | macOS, WSL |
-| DeepSeek | `deepseek-executor` MCP server, the `/deepseek-run` skill, and `claude-deepseek` (Claude Code on DeepSeek's API) | macOS, WSL |
-| GitHub | `gh` CLI, set up as the git credential helper | macOS, WSL |
-| macOS system | Dark mode, fast key repeat, auto-hidden menu bar and Dock, Finder list view, clean desktop, tap to click. Homebrew casks: WezTerm, Claude Code. Brews: herdr | macOS |
-| WSL system | `/etc/wsl.conf` with systemd and your default user, zsh as login shell, the Windows-side WezTerm loader | WSL |
+Every row applies to both macOS and WSL, except the two system rows at the end.
+
+| Area | What you get |
+| --- | --- |
+| Packages | ripgrep, fd, fzf, jq, lazygit, Neovim, awscli2, flyctl, Node.js 26, pnpm, uv, cursor-cli, Hack Nerd Font |
+| Shell | zsh with autosuggestions and syntax highlighting, starship prompt, git aliases, a `wt` worktree helper |
+| Editor | Neovim on lazy.nvim: rose-pine moon, snacks picker, oil, Neogit + diffview, gitsigns blame, which-key, a Windows clipboard bridge under WSL |
+| Terminal | WezTerm with Tokyo Night and Hack Nerd Font: blurred and translucent on macOS, opens straight into WSL on Windows |
+| Workspace | [herdr][herdr-url] agent multiplexer with tmux-style `Ctrl+B` keys, worktree shortcuts and a chime when an agent finishes |
+| AI agents | One shared `AGENTS.md` for Claude Code, Codex and Antigravity, session hooks, desktop notifications, a Claude statusline with a 300k-token budget |
+| DeepSeek | `deepseek-executor` MCP server, the `/deepseek-run` skill, and `claude-deepseek` (Claude Code on DeepSeek's API) |
+| GitHub | `gh` CLI, set up as the git credential helper |
+| macOS system | Dark mode, fast key repeat, auto-hidden menu bar and Dock, Finder list view, clean desktop, tap to click. Homebrew casks: WezTerm, Claude Code. Brews: herdr |
+| WSL system | `/etc/wsl.conf` with systemd and your default user, zsh as login shell, the Windows-side WezTerm loader |
 
 ### Built With
 
-* [![Nix][nix-shield]][nix-url]
-* [![Determinate Nix][determinate-shield]][determinate-url]
-* [![home-manager][home-manager-shield]][home-manager-url]
-* [![nix-darwin][nix-darwin-shield]][nix-darwin-url]
-* [![nix-homebrew][nix-homebrew-shield]][nix-homebrew-url]
-* [![Neovim][neovim-shield]][neovim-url]
-* [![WezTerm][wezterm-shield]][wezterm-url]
-* [![herdr][herdr-shield]][herdr-url]
-* [![zsh][zsh-shield]][zsh-url]
-* [![Starship][starship-shield]][starship-url]
+[![Nix][nix-shield]][nix-url]
+[![Determinate Nix][determinate-shield]][determinate-url]
+[![home-manager][home-manager-shield]][home-manager-url]
+[![nix-darwin][nix-darwin-shield]][nix-darwin-url]
+[![nix-homebrew][nix-homebrew-shield]][nix-homebrew-url]
+[![Neovim][neovim-shield]][neovim-url]
+[![WezTerm][wezterm-shield]][wezterm-url]
+[![herdr][herdr-shield]][herdr-url]
+[![zsh][zsh-shield]][zsh-url]
+[![Starship][starship-shield]][starship-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -126,15 +127,17 @@ Optional extras. The repo manages their config, but not the tools themselves:
 | Claude Code (`claude`) | The `cc` alias, Claude settings, the DeepSeek MCP registration | macOS: installed for you as a Homebrew cask. WSL: `curl -fsSL https://claude.ai/install.sh \| bash` |
 | Codex (`codex`) | The `co` alias, Codex hooks | `npm i -g @openai/codex` |
 | Antigravity (`agy`) | Antigravity hooks and MCP servers | [antigravity.google](https://antigravity.google) |
-| `gh-axi`, `chrome-devtools-axi`, `lavish-axi` | SessionStart hooks in Claude Code and Codex | `npm config set prefix ~/.npm-global && npm i -g gh-axi chrome-devtools-axi lavish-axi` |
+| The `*-axi` CLIs | SessionStart hooks in Claude Code and Codex | `npm i -g gh-axi chrome-devtools-axi lavish-axi` |
 | DeepSeek API key | `deepseek-executor` and `claude-deepseek` | [platform.deepseek.com](https://platform.deepseek.com) |
+
+The shell already has `~/.npm-global/bin` on `PATH`. Point npm at it once, before the global installs: `npm config set prefix ~/.npm-global`.
 
 ### Make it yours
 
 This repo is set up for my machines. Review these before you run `bootstrap.sh`, because it applies the config right away:
 
 * **Username.** The single `user = "yashjeetbajwa"` line in `flake.nix`. `bootstrap.sh` detects your username and offers to rewrite it. Everything else (`configuration.nix`, `home.nix`, home directory paths) is threaded from that one variable.
-* **Host label** `mac`, in three places that have to match: the `darwinConfigurations."mac"` name in `flake.nix`, the `#mac` in `rebuild.sh`, and the `#mac` in `bootstrap.sh`'s first-switch command.
+* **Host label** `mac`, in three places that have to match: the `darwinConfigurations."mac"` name in `flake.nix`, the `#mac` in `rebuild.sh`, and the `#mac` in the first-switch command in `bootstrap.sh`.
 * **CPU architecture.** See [Prerequisites](#prerequisites).
 * **WSL distro name.** Defaults to `Ubuntu`, in two places: `WSL_DISTRO` in `bootstrap.sh` (builds the Windows WezTerm loader path) and `config.default_domain = "WSL:Ubuntu"` in `home/.config/wezterm/wezterm.lua`.
 * **Windows username.** `bootstrap.sh` detects it through `cmd.exe`. Override with `WIN_USER=...` if detection fails.
@@ -170,9 +173,7 @@ programs.git = {
    1. Installs Determinate Nix, if it isn't already installed.
    2. Symlinks this repo to `~/.dotfiles`.
    3. Checks the `user` in `flake.nix` against your macOS username, and offers to fix it if they differ.
-   4. Runs the first `darwin-rebuild switch`, fetching `darwin-rebuild` from the nix-darwin 26.05 branch and applying this repo's locked flake.
-
-   After that, `darwin-rebuild` is installed and you're on the [daily workflow](#daily-workflow).
+   4. Runs the first `darwin-rebuild switch`, fetching `darwin-rebuild` from the nix-darwin 26.05 branch and applying this repo's locked flake. From then on, `darwin-rebuild` is installed and you're on the [daily workflow](#daily-workflow).
    </details>
    <details>
      <summary>What it does on WSL Ubuntu (7 steps)</summary>
@@ -206,9 +207,9 @@ programs.git = {
    herdr integration install codex
 
    # Give the DeepSeek executor and claude-deepseek your API key
-   cp ~/.config/claude-mcp/deepseek-executor/.env.example ~/.config/claude-mcp/deepseek-executor/.env
-   chmod 600 ~/.config/claude-mcp/deepseek-executor/.env
-   $EDITOR ~/.config/claude-mcp/deepseek-executor/.env
+   cd ~/.config/claude-mcp/deepseek-executor
+   cp .env.example .env && chmod 600 .env
+   $EDITOR .env
    ```
 
 **Check without applying.** Once Nix is installed, you can confirm the config evaluates without touching your system:
@@ -250,7 +251,8 @@ WezTerm on Windows is the exception. The config lives in this repo, but WezTerm 
 | --- | --- |
 | `Ctrl+F` | Accept the autosuggestion |
 | `..` | `cd ..` |
-| `add` / `push` / `pull` | `git add .` / `git push` / `git pull` |
+| `add` | `git add .` |
+| `push` / `pull` | `git push` / `git pull` |
 | `m` | `git switch main` |
 | `wt new <branch>` | Create or check out a worktree at `.worktrees/<branch>` and `cd` into it |
 | `wt rm <branch>` | Remove that worktree, and its branch if it is merged |
@@ -342,7 +344,7 @@ The prefix is `Ctrl+B`, tmux style. Press the prefix, then:
 dripfiles/
 ├── flake.nix            # entry point: inputs, the Linux home config, the "mac" darwin config
 ├── flake.lock           # pinned inputs
-├── home.nix             # shared user config: packages, zsh, starship, gh, symlinks, MCP registration
+├── home.nix             # shared user config: packages, shell, symlinks
 ├── configuration.nix    # macOS only: system defaults and Homebrew
 ├── wsl.conf             # WSL only: copied to /etc/wsl.conf by bootstrap.sh
 ├── bootstrap.sh         # first run on a fresh machine
@@ -357,7 +359,7 @@ dripfiles/
     │   ├── nvim/        # Neovim
     │   ├── wezterm/     # WezTerm
     │   ├── herdr/       # herdr
-    │   └── claude-mcp/deepseek-executor/   # MCP server, lockfile, tests, .env.example
+    │   └── claude-mcp/  # the DeepSeek executor MCP server and its tests
     └── .local/bin/      # agent-notify-done, claude-deepseek
 ```
 
