@@ -70,6 +70,14 @@
     "command": "bash \"$HOME/.claude/hooks/statusline-context.sh\"",
     "padding": 0
   },
+  "extraKnownMarketplaces": {
+    "workhunt": {
+      "source": {
+        "source": "github",
+        "repo": "coffeedroplabs/workhunt-claude-plugin"
+      }
+    }
+  },
   "alwaysThinkingEnabled": true,
   "modelSettings": {
     "claude-opus-5-5": {
@@ -80,5 +88,8 @@
   "autoMemoryEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark-ansi",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "enabledPlugins": {
+    "workhunt@workhunt": true
+  }
 }
